@@ -1,0 +1,105 @@
+Comandos:
+
+kubectl config get-clusters -> Lista todos os clusters Kubernetes
+kubectl cluster-info --context kind-fullcycle -> Se conecta no cluster de nome "kind-fullcycle"
+kubectl get nodes -> Retorna todos os nós do cluster
+kubectl apply -f k8s/deployment.yaml -> Aplicar arquivo de config "deployment.yaml" (Nesse caso, criando Deployment)
+kubectl get pods -> Retorna todos os Pods
+kubectl port-forward pod/goserver 8080:8080 -> Acessar Pod via redirecionamento de porta
+kubectl delete pod goserver -> Deletar Pod "goserver"
+kubectl get replicasets -> Retorna ReplicaSets
+kubectl delete replicasets goserver -> Deletar ReplicaSet "goserver"
+kubectl describe pod goserver-m27xj -> Lista detalhes do Pod "goserver-m27xj"
+kubectl get deployments -> Retorna Deployments
+kubectl rollout history deployment goserver -> Lista histórico de versões do Deployment "goserver"
+kubectl rollout undo deployment goserver -> Volta para versão anterior antes do ultimo Deployment
+kubectl rollout undo deployment goserver --to-revision=2 -> Volta para uma versão específica de Deployment
+kubectl describe deployment goserver -> Lista detalhes do Deployment "goserver"
+kubectl get services -> Retorna Services
+kubectl port-forward service/goserver-service 8090:8090 -> Acessar Service, que por sua vez distribui requisições aos Pods, via redirecionamento de porta
+kubectl proxy --port=8080 -> Servir a API do Kubernetes na porta 8080
+kubectl exec -it goserver-m27xj -- bash -> Entrar dentro do Pod
+kubectl logs goserver-m27xj -> Ver logs do Pod
+kubectl apply -f k8s/deployment.yaml && watch -n1 kubectl get pods -> Após aplicar o Deployment, irá monitorar os Pods
+kubectl top pod goserver-58b55c4fd-7tp9w -> Retorna consumo de recursos do Pod "goserver-58b55c4fd-7tp9w"
+kubectl get hpa -> Retorna detalhes do HPA (CPU target, MINPods, MAXPods, Replicas)
+kubectl run -it fortio --rm --image=fortio/fortio -- load -qps 800 -t 220s -c 70 "http://goserver-service:8090/healthz" -> Cria Pod para executar imagem do Fortio (ferramenta para teste de stress) e mata o Pod quando o processo acabar. Nesse comando, estamos fazendo 800 req/s por 220 segundos com 70 conexões simultaneas.
+
+Observações:
+
+1)
+- ReplicaSet tem um problema: ao gerar uma nova imagem (v2 de um app por exemplo), fazer o push pro container registry e atualizar o yaml do ReplicaSet
+pra usar essa nova versão, os Pods em execução não são atualizados e continuam rodando a imagem anterior (v1 por exemplo). Ou seja, você precisa matar
+todos os Pods atuais para o ReplicaSet criar novos com a imagem atual.
+
+- Para resolver isso, precisamos criar um Deployment. Ao aplicar um novo Deployment com uma nova imagem, ele vai matando os Pods antigos e subindo novos 
+de maneira progressiva, para não ficar fora do ar em nenhum momento.
+
+- Deployment -> ReplicaSet -> Pod
+
+
+2)
+- Para tornar os Pods acessiveis, precisamos de Services. As Services também irão atuar como um load balancer para os Pods, escolhendo automaticamente 
+qual Pod irá responder a requisição.
+
+- O Kubernetes trabalha com resolução de DNS, então conseguimos acessar um Service pelo nome (goserver-service por exemplo) e não pelo IP
+
+- Numa Service, port é a porta da Service. Já targetPort é a porta do container. Caso as portas sejam iguais, usar somente port é suficiente.
+
+- Temos 2 principais types para Service (ClusterIP e LoadBalancer). Quando precisamos expor pra internet, LoadBalancer é o mais recomendado. Senão, 
+ClusterIP é o ideal.
+
+
+3)
+- A melhor maneira de lidar com variaveis de ambiente é através do Secret. A vantagem dele em relação ao ConfigMap é que você pode salvar os valores em
+base64. Claro que base64 é facilmente revertido, então o ideal mesmo seria integrar com algum serviço de Vault terceiro.
+
+
+4)
+- Ao definir um endpoint de healthcheck, podemos configurar no Deployment um livenessProbe, que irá chamar nosso endpoint num intervalo X de tempo
+(configurável) e caso receba um erro por X vezes (também configurável), irá reiniciar o Pod. Também é possivel definir um timeout. Se não receber
+resposta nesse tempo, será considerado como erro. Por fim, é possivel definir o número de sucessos necessário para o livenessProbe considerar que a 
+aplicação está saudável.
+
+- Já o readinessProbe serve para não direcionar tráfego para um Pod cuja aplicação ainda está iniciando e não está pronta. Podemos definir o intervalo
+de tempo a cada chamada de teste, o número de erros necessário para o readinessProbe entender que a aplicação ainda não está pronta (normalmente 1) e
+um delay para começar efetivamente as chamadas de teste, para não ficar batendo no endpoint desnecessariamente durante um tempo que de antemão sabemos
+que a aplicação não estará pronta.
+
+- Usar ambos em conjunto pode trazer problemas, já que enquanto o readiness está esperando a aplicação ficar pronta, o liveness ao identificar erro irá 
+reiniciar o Pod. Uma forma de resolver, seria adicionar também um delay ao liveness pra ele passar a verificar somente depois de um tempo definido,
+quando provavelmente a aplicação já estará pronta.
+
+- Aí chegamos no startupProbe. Podemos colocar um tempo longo nele, pensando no máximo que pode demorar para minha aplicação ficar pronta. Uma vez
+que ela está pronta, ele encerra as verificações e libera o readiness e o liveness pra atuar. Consequentemente, não precisamos mais colocar delay 
+nesses 2.
+
+- Em resumo, utilizando os 3, nós temos o startupProbe liberando trafego para o Pod quando a aplicação está pronta. O readinessProbe cortando o trafego 
+e o livenessProbe reiniciando o Pod quando a aplicação está fora.
+
+
+5)
+- Metrics-server para coletar informações sobre os Pods e, portanto, saber quando escalar e até quanto escalar.
+
+
+6)
+- É importante setar os recursos que o Pod pode consumir. Senão, ele pode consumir mais recursos do que a máquina tem e comprometer o sistema.
+1 vCPU -> 1000 m (milicores), logo 500m = 1/2 vCPU. Podemos usar tanto a sintaxe 500m quanto 0.5
+20Mi -> 20 mega de memória
+
+- De acordo com os recursos gastos pelo Pod, o Kubernetes irá criá-lo em um node do cluster que tenha essa capacidade disponível. Se por um acaso, 
+você definir recursos muito altos, que nenhum node do cluster tem capacidade de atender, esse Pod ficará pendente até que exista essa capacidade.
+
+- A diferença entre "requests" e "limits" é: "requests" define o mínimo que aquele Pod precisa pra funcionar. Já limits define o máximo. Caso ele 
+precise usar mais recursos por conta de um aumento de volume, ele poderá até atingir o limite definido.
+
+- Para fazer o calculo de número de Pods, divida a capacidade máxima do cluster (por ex: 3 nodes com 1 vCPU em cada = 3000m) pelo limite máximo do
+Pod (por ex: 500m). Logo, o número máximo de Pods seria de 6. Porém, nem sempre todos os Pods estarão no limite, então parte do cluster estará
+ocioso. Nesse caso, pode-se ter uma estrategia semelhante ao overbooking das companhias aereas. Enfim, devemos calcular pelo "limits" e não pqlo
+"requests", porém podemos deixar passar um pouco para diminuir a ociosidade das máquinas.
+
+
+7)
+- HPA (Horizontal Pod Autoscaler) analisa as métricas de consumo de recursos (por ex: CPU) e realiza o escalonamento conforme necessidade. Na 
+configuração do HPA podemos definir o número minimo de replicas (normalmente 3) e o número máximo. Para definir quando ele irá escalar, setamos uma 
+porcentagem de uso de CPU (por ex: 75%). Se os Pods atingirem esse valor de uso, ele irá criar mais replicas.
