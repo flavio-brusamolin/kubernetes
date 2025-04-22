@@ -95,7 +95,7 @@ precise usar mais recursos por conta de um aumento de volume, ele poderá até a
 
 - Para fazer o calculo de número de Pods, divida a capacidade máxima do cluster (por ex: 3 nodes com 1 vCPU em cada = 3000m) pelo limite máximo do
 Pod (por ex: 500m). Logo, o número máximo de Pods seria de 6. Porém, nem sempre todos os Pods estarão no limite, então parte do cluster estará
-ocioso. Nesse caso, pode-se ter uma estrategia semelhante ao overbooking das companhias aereas. Enfim, devemos calcular pelo "limits" e não pqlo
+ocioso. Nesse caso, pode-se ter uma estrategia semelhante ao overbooking das companhias aereas. Enfim, devemos calcular pelo "limits" e não pelo
 "requests", porém podemos deixar passar um pouco para diminuir a ociosidade das máquinas.
 
 
