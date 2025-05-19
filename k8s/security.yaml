@@ -24,7 +24,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: goserver
-    namespace: prod
+    namespace: default
 roleRef:
   kind: ClusterRole
   name: goserver-read
