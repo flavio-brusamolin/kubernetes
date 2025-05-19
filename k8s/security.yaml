@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: goserver
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: goserver-read
+rules:
+  - apiGroups: ['']
+    resources: ['pods', 'services']
+    verbs: ['get', 'watch', 'list']
+  - apiGroups: ['apps']
+    resources: ['deployments']
+    verbs: ['get', 'watch', 'list']
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: goserver-read-bind
+subjects:
+  - kind: ServiceAccount
+    name: goserver
+    namespace: prod
+roleRef:
+  kind: ClusterRole
+  name: goserver-read
+  apiGroup: rbac.authorization.k8s.io
